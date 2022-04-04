@@ -24,12 +24,16 @@ public class MtStHelensVis : MonoBehaviour
     Vector3Int dims_1;
     Bounds b;
     private int COLUMNS = 4;
+    private int ROWS = 1;
 
     // declare various vasassets
     private ColormapVisAsset divGO;
 
     // List to store all data impressions in
     private List<IDataImpression> all_impressions = new List<IDataImpression>();
+
+    // list to store all groups in
+    private List<DataImpressionGroup> all_groups = new List<DataImpressionGroup>();
 
     //
     ////////////////////////////////////////////////////////////////////////////////
@@ -65,20 +69,21 @@ public class MtStHelensVis : MonoBehaviour
         //gi.colormap = ColormapVisAsset.SolidColor(white);
         gi.colorVariable = vol.GetScalarVariables()[0];
         gi.colormap = divGO;
-        float[] points = new float[] { 0.32f, 0.37f };//, 0.7f, 0.8f };
-        string[] values = new string[] { "0%", "100%" };//, "100%", "0%" };
-        PrimitiveGradient grad = new PrimitiveGradient(new Guid("3c8e4f57-427e-4408-b26b-21f3c1619c62"), points, values);
+        float[] points = new float[] { 0.32f, 0.37f };
+        string[] values = new string[] { "0%", "100%" };
+        PrimitiveGradient grad = new PrimitiveGradient(Guid.NewGuid(), points, values);
         gi.opacitymap = grad;
 
         // create groups
-        string cell_name = "cell " + column.ToString() + row.ToString();
-        DataImpressionGroup groupA = ABREngine.Instance.CreateDataImpressionGroup(cell_name, new Vector3(2.0f*column-COLUMNS+1, 1.0f*COLUMNS, 2.5f*row));
+        string cell_name = "cell " + column.ToString() + " " + row.ToString();
+        DataImpressionGroup group = ABREngine.Instance.CreateDataImpressionGroup(cell_name, new Vector3(0, 0, 0));
 
         // Register impressions with the engine
-        ABREngine.Instance.RegisterDataImpression(gi, groupA, true);
+        ABREngine.Instance.RegisterDataImpression(gi, group, true);
 
         // Add a reference to these impressions so we can easily turn them on/off later
         all_impressions.Add(gi);
+        all_groups.Add(group);
 
     }
 
@@ -120,6 +125,16 @@ public class MtStHelensVis : MonoBehaviour
         foreach (var impression in all_impressions)
         {
             impression.RenderHints.Visible = true;
+        }
+
+        // make the groups rotate without moving their position relative to the camera
+        GameObject cam = GameObject.Find("Camera Pivot");
+        foreach (DataImpressionGroup group in all_groups)
+        {
+            int[] coords = coords_from_name(group.Name);
+            GameObject group_GO = ABREngine.Instance.GetEncodedGameObject(new List<Guid>(group.GetDataImpressions().Keys)[0]).gameObject;
+            Vector3 position = new Vector3(2.0f * coords[0] - COLUMNS + 1, 2.5f * (coords[1] - (ROWS - 1) / 2), 0);
+            group_GO.transform.SetPositionAndRotation(cam.transform.TransformVector(position), group_GO.transform.rotation);
         }
 
         // Re-render the visualization if user pressed a key
@@ -224,5 +239,11 @@ public class MtStHelensVis : MonoBehaviour
             k++;
         }
         return volume;
+    }
+
+    int[] coords_from_name(string name)
+    {
+        string[] nums = name.Split(' ');
+        return new int[] { int.Parse(nums[1]), int.Parse(nums[2]) };
     }
 }
