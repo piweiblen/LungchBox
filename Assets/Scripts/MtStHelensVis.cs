@@ -12,17 +12,6 @@ using System.Linq;
 using System;
 
 
-public static class ExtensionMethods
-{
-
-    public static float Remap(this float value, float from1, float to1, float from2, float to2)
-    {
-        return ((value - from1) / (to1 - from1)) * (to2 - from2) + from2;
-    }
-
-}
-
-
 public class MtStHelensVis : MonoBehaviour
 {
     ////////////////////////////////////////////////////////////////////////////////
@@ -30,18 +19,17 @@ public class MtStHelensVis : MonoBehaviour
 
     // Constants for data files
     private string dataFilePath;
-    public const string beforeFileName = "beforeGrid240x346.csv";
-    public const string afterFileName = "afterGrid240x346.csv";
     public const string setPath = "set_1";
     float[][][] volume_1;
-    Vector3Int dims_1 = new Vector3Int(664, 105, 664);
-    Bounds b = new Bounds(Vector3.zero, new Vector3Int(664, 300, 664));
+    Vector3Int dims_1;
+    Bounds b;
+    private int COLUMNS = 4;
 
     // declare various vasassets
     private ColormapVisAsset divGO;
 
-    // List to store all data impressions (per vis method) in
-    private List<List<IDataImpression>> impressionsPerMethod = new List<List<IDataImpression>>();
+    // List to store all data impressions in
+    private List<IDataImpression> all_impressions = new List<IDataImpression>();
 
     //
     ////////////////////////////////////////////////////////////////////////////////
@@ -59,7 +47,10 @@ public class MtStHelensVis : MonoBehaviour
     //  3. Create your data impression(s) and style them with size, color, texture, etc.
     //  4. Register the data impressions with the ABREngine
     //  5. Save the impressions into this script so we can easily turn them on/off
-    void PrepareMethod1()
+
+    // Start is run when you press 'Play' in Unity - this is similar to
+    // 'setup()' in Processing.
+    void add_volume(int column, int row, string name)
     {
         // Convert the point lists into ABR format
         RawDataset abrVolume = RawDatasetAdapter.VoxelsToVolume(volume_1, "firstData", dims_1, b);
@@ -67,25 +58,30 @@ public class MtStHelensVis : MonoBehaviour
         // Import the point data into ABR
         KeyData vol = ABREngine.Instance.Data.ImportRawDataset(abrVolume);
 
-        // Create data impression
+        // Create data impressions
         SimpleVolumeDataImpression gi = new SimpleVolumeDataImpression();
         gi.keyData = vol;
         //Color white = new Color(1.0f, 1.0f, 1.0f);
         //gi.colormap = ColormapVisAsset.SolidColor(white);
         gi.colorVariable = vol.GetScalarVariables()[0];
         gi.colormap = divGO;
-        //gi.opacitymap = vol.GetScalarVariables()[0];
-        gi.opacitymap = PrimitiveGradient.Default();
+        float[] points = new float[] { 0.32f, 0.37f };//, 0.7f, 0.8f };
+        string[] values = new string[] { "0%", "100%" };//, "100%", "0%" };
+        PrimitiveGradient grad = new PrimitiveGradient(new Guid("3c8e4f57-427e-4408-b26b-21f3c1619c62"), points, values);
+        gi.opacitymap = grad;
+
+        // create groups
+        string cell_name = "cell " + column.ToString() + row.ToString();
+        DataImpressionGroup groupA = ABREngine.Instance.CreateDataImpressionGroup(cell_name, new Vector3(2.0f*column-COLUMNS+1, 1.0f*COLUMNS, 2.5f*row));
 
         // Register impressions with the engine
-        ABREngine.Instance.RegisterDataImpression(gi);
+        ABREngine.Instance.RegisterDataImpression(gi, groupA, true);
 
         // Add a reference to these impressions so we can easily turn them on/off later
-        impressionsPerMethod.Add(new List<IDataImpression> {gi});
+        all_impressions.Add(gi);
+
     }
 
-    // Start is run when you press 'Play' in Unity - this is similar to
-    // 'setup()' in Processing.
     void Start()
     {
         // Wait for ABREngine to initialize
@@ -97,8 +93,10 @@ public class MtStHelensVis : MonoBehaviour
         // Start by loading in the data from CSV files.
         LoadData();
 
-        // Prepare each method here
-        PrepareMethod1();
+        for (int c = 0; c < COLUMNS; c++)
+        {
+            add_volume(c, 0, "uh");
+        }
     }
 
     // Update is run each frame -- this is similar to Processing's 'draw()' function
@@ -119,12 +117,9 @@ public class MtStHelensVis : MonoBehaviour
         }
 
         // Turn on the impressions associated with this mode
-        if (currentVisMode - 1 < impressionsPerMethod.Count)
+        foreach (var impression in all_impressions)
         {
-            foreach (var impression in impressionsPerMethod[currentVisMode - 1])
-            {
-                impression.RenderHints.Visible = true;
-            }
+            impression.RenderHints.Visible = true;
         }
 
         // Re-render the visualization if user pressed a key
@@ -139,15 +134,54 @@ public class MtStHelensVis : MonoBehaviour
     void LoadData()
     {
         // Load in the raw coordinates from CSV (convert from right-hand z-up to unity's left-hand y-up)
+        dims_1 = getCTdims(Path.Combine(dataFilePath, setPath));
+        b = new Bounds(Vector3.zero, dims_1);
         volume_1 = loadCTcsv(Path.Combine(dataFilePath, setPath), dims_1);
 
+
         // load some colors
-        divGO = ABREngine.Instance.VisAssets.LoadVisAsset<ColormapVisAsset>(new Guid("2fe08fbe-6f5e-4c11-a1df-ccce0c04cfb9"));
+        divGO = ABREngine.Instance.VisAssets.LoadVisAsset<ColormapVisAsset>(new Guid("3c8e4f57-427e-4408-b26b-21f3c1619c62"));
+    }
+
+    Vector3Int getCTdims(string csvDirPath)
+    {
+        Vector3Int dims = new Vector3Int(0, 0, 0);
+        DirectoryInfo place = new DirectoryInfo(csvDirPath);
+        FileInfo[] Files = place.GetFiles();
+        FileInfo file;
+        for (int f = 0; f < Files.Length; f++)
+        {
+            file = Files[f];
+            if (file.Name.EndsWith("csv"))
+            {
+                dims[1]++;
+                if (dims[0] != 0 & dims[2] != 0)
+                {
+                    continue;
+                }
+            }
+            else
+            {
+                continue;
+            }
+            dims[0] = 0;
+            dims[2] = 0;
+            using (StreamReader reader = new StreamReader(Path.Combine(csvDirPath, file.Name)))
+            {
+                string line = reader.ReadLine();
+                dims[2] = line.Trim().Split(',').Length;
+                while (line != null)
+                {
+                    dims[0]++;
+                    line = reader.ReadLine();
+                }
+            }
+        }
+        return dims;
     }
 
     /// <summary>
     /// Import a series of CSV files into a 3d int array. 
-    /// Normalizes all values from 0 to 1
     /// </summary>
     float[][][] loadCTcsv(string csvDirPath, Vector3 dims)
     {
@@ -166,7 +200,8 @@ public class MtStHelensVis : MonoBehaviour
         DirectoryInfo place = new DirectoryInfo(csvDirPath);
         FileInfo[] Files = place.GetFiles();
         FileInfo file;
-        for (int f=0; f<dims[1]; f++)
+        int k = 0;
+        for (int f=0; f<Files.Length; f++)
         {
             file = Files[f];
             if (file.Name.EndsWith("meta"))
@@ -181,42 +216,12 @@ public class MtStHelensVis : MonoBehaviour
                     string[] contents = line.Trim().Split(',');
                     for (int j=0; j<dims[2]; j++)
                     {
-                        volume[i][f][j] = float.Parse(contents[j]);
+                        volume[i][k][j] = float.Parse(contents[j]);
                     }
                     line = reader.ReadLine();
                 }
             }
-        }
-        // normalize the data in the array
-        Debug.Log("Normalizing set " + csvDirPath);
-        float maxVal = float.MinValue;
-        float minVal = float.MaxValue;
-        for (int i=0; i<dims[0]; i++)
-        {
-            for (int j=0; j<dims[1]; j++)
-            {
-                for (int k=0; k<dims[2]; k++)
-                {
-                    if (volume[i][j][k] < minVal)
-                    {
-                        minVal = volume[i][j][k];
-                    }
-                    if (volume[i][j][k] > maxVal)
-                    {
-                        maxVal = volume[i][j][k];
-                    }
-                }
-            }
-        }
-        for (int i = 0; i < dims[0]; i++)
-        {
-            for (int j = 0; j < dims[1]; j++)
-            {
-                for (int k = 0; k < dims[2]; k++)
-                {
-                    volume[i][j][k] = volume[i][j][k].Remap(minVal, maxVal, 0, 1);
-                }
-            }
+            k++;
         }
         return volume;
     }
